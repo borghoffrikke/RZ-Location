@@ -9,32 +9,28 @@
 <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Microsoft YaHei',sans-serif;height:100dvh;display:flex;flex-direction:column;background:#000}
-#header{background:#1976D2;color:#fff;padding:6px 12px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;z-index:1000}
+body{font-family:sans-serif;height:100dvh;overflow:hidden;background:#000}
+#header{height:40px;background:#1976D2;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
 #status{font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap}
 #status.online{background:#4CAF50}
 #status.offline{background:#F44336}
-
-#map{flex:1;min-height:200px;z-index:1}
-
-/* 底部信息区 — 绝对定位不占 flex 空间 */
-#bottom{position:absolute;bottom:0;left:0;right:0;z-index:500;pointer-events:none;display:flex;flex-direction:column;max-height:45%}
-#log{background:rgba(0,0,0,0.85);color:#0f0;font-size:10px;padding:4px 8px;max-height:90px;overflow-y:auto;font-family:monospace;pointer-events:auto}
-#panel{background:rgba(255,255,255,0.95);border-top:2px solid #1976D2;max-height:160px;overflow-y:auto;pointer-events:auto}
-.dev{padding:8px 12px;border-bottom:1px solid #eee;cursor:pointer;font-size:13px;display:flex;justify-content:space-between;align-items:center}
+#map{width:100%;height:calc(100dvh - 40px - 140px)}
+#log{width:100%;height:60px;background:#111;color:#0f0;font-size:10px;padding:4px 8px;overflow-y:auto;font-family:monospace}
+#panel{width:100%;height:80px;background:#fff;overflow-y:auto;border-top:2px solid #1976D2}
+.dev{padding:8px 12px;border-bottom:1px solid #eee;cursor:pointer;font-size:13px;display:flex;justify-content:space-between}
 .dev:active{background:#e0e0e0}
 .name{font-weight:bold}
 .time{color:#999;font-size:10px}
 
-#login-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px}
-#login-box{background:#fff;padding:20px;border-radius:8px;width:100%;max-width:320px}
-#login-box h3{font-size:16px;margin-bottom:10px}
-#login-box label{font-size:12px;color:#666;display:block;margin-top:6px}
-#login-box input{width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;font-size:16px;margin-top:2px}
-#login-box .row{display:flex;align-items:center;gap:6px;margin-top:4px}
-#login-box .row span{font-size:11px;white-space:nowrap}
-#login-box button{width:100%;padding:12px;background:#1976D2;color:#fff;border:none;border-radius:4px;font-size:16px;margin-top:10px;cursor:pointer}
-.tip{font-size:10px;color:#999;margin-top:6px;text-align:center}
+#login{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px}
+#login>div{background:#fff;padding:20px;border-radius:8px;width:100%;max-width:320px}
+#login h3{font-size:16px;margin-bottom:10px}
+#login label{font-size:12px;color:#666;display:block;margin-top:6px}
+#login input{width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;font-size:16px;margin-top:2px}
+#login button{width:100%;padding:12px;background:#1976D2;color:#fff;border:none;border-radius:4px;font-size:16px;margin-top:10px;cursor:pointer}
+#login .row{display:flex;align-items:center;gap:6px;margin-top:4px}
+#login .row span{font-size:11px}
+#login .tip{font-size:10px;color:#999;margin-top:6px;text-align:center}
 </style>
 </head>
 <body>
@@ -44,13 +40,11 @@ body{font-family:'Microsoft YaHei',sans-serif;height:100dvh;display:flex;flex-di
   <span id="status" class="offline">未连接</span>
 </div>
 <div id="map"></div>
-<div id="bottom">
-  <div id="log"></div>
-  <div id="panel"></div>
-</div>
+<div id="log"></div>
+<div id="panel"></div>
 
-<div id="login-overlay">
-  <div id="login-box">
+<div id="login">
+  <div>
     <h3>连接 EMQX</h3>
     <label>地址</label>
     <input id="host" value="wss://g16b99c6.ala.cn-hangzhou.emqxsl.cn:8084/mqtt">
@@ -65,157 +59,107 @@ body{font-family:'Microsoft YaHei',sans-serif;height:100dvh;display:flex;flex-di
       <span>记住登录</span>
     </div>
     <button id="btnConnect" type="button">连 接</button>
-    <div class="tip">底部显示日志和设备列表</div>
+    <div class="tip">底部显示日志和设备信息</div>
   </div>
 </div>
 
 <script>
-const LS_KEY = 'locapp_creds';
-const $ = id => document.getElementById(id);
+const LS='locapp_creds',$=id=>document.getElementById(id);
+const map=L.map('map',{zoomControl:true}).setView([35,105],5);
+L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{subdomains:'1234',maxZoom:18}).addTo(map);
+map.invalidateSize();
 
-// 自动填回保存的凭据
-(function(){
-  try {
-    const saved = JSON.parse(localStorage.getItem(LS_KEY));
-    if (saved) {
-      $('host').value = saved.host || $('host').value;
-      $('username').value = saved.user || '';
-      $('password').value = saved.pass || '';
-      $('groupId').value = saved.group || '1';
-      $('saveCreds').checked = true;
-    }
-  } catch(_) {}
-})();
+const markers={},devices={},colors=['#E53935','#43A047','#FB8C00','#8E24AA','#00ACC1'];
+let ci=0,cm={};
 
-$('btnConnect').addEventListener('click', connect);
-
-const map = L.map('map').setView([35,105],5);
-L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
-  subdomains:'1234', maxZoom:18
-}).addTo(map);
-// 刷新地图大小
-setTimeout(()=>map.invalidateSize(), 500);
-
-const markers={}, devices={};
-const colors=['#E53935','#43A047','#FB8C00','#8E24AA','#00ACC1'];
-let ci=0, cm={};
-
-function log(msg) {
-  const el = $('log');
-  el.innerHTML += `[${new Date().toLocaleTimeString()}] ${msg}<br>`;
-  el.scrollTop = el.scrollHeight;
+function log(msg){
+  const el=$('log');
+  el.innerHTML+='['+new Date().toLocaleTimeString()+'] '+msg+'<br>';
+  el.scrollTop=el.scrollHeight;
 }
 
-function connect() {
-  const host = $('host').value.trim();
-  const user = $('username').value.trim();
-  const pass = $('password').value;
-  const gid = $('groupId').value.trim()||'1';
+function connect(auto){
+  const host=$('host').value.trim();
+  const user=$('username').value.trim();
+  const pass=$('password').value;
+  const gid=$('groupId').value.trim()||'1';
 
-  if (!host.startsWith('wss://') && !host.startsWith('ws://')) {
-    alert('地址必须以 wss:// 或 ws:// 开头'); return;
-  }
+  if(!auto && !host.startsWith('wss://') && !host.startsWith('ws://')){alert('地址需以 wss:// 开头');return}
 
-  // 保存凭据
-  if ($('saveCreds').checked) {
-    localStorage.setItem(LS_KEY, JSON.stringify({host,user,pass,group:gid}));
-  } else {
-    localStorage.removeItem(LS_KEY);
-  }
+  if($('saveCreds').checked) localStorage.setItem(LS,JSON.stringify({host,user,pass,group:gid}));
 
-  $('status').textContent = '连接中...';
-  $('status').className = '';
-  log('连接: ' + host);
-  $('login-overlay').style.display = 'none';
+  $('status').textContent='连接中...';$('status').className='';
+  log('正在连接...');
+  $('login').style.display='none';
 
-  const opts = {
-    clientId: 'web-' + Date.now().toString(36),
-    clean: true, keepalive: 60,
-    reconnectPeriod: 5000, connectTimeout: 10000
-  };
-  if (user) { opts.username = user; opts.password = pass; }
+  const opts={clientId:'w-'+Date.now().toString(36),clean:true,keepalive:60,reconnectPeriod:5000,connectTimeout:10000};
+  if(user){opts.username=user;opts.password=pass}
 
-  try {
-    const client = mqtt.connect(host, opts);
-
-    client.on('connect', () => {
-      $('status').textContent = '已连接';
-      $('status').className = 'online';
-      log('✓ WebSocket 已连接');
-      const lt = 'location/group/' + gid;
-      const st = 'status/group/' + gid;
-      client.subscribe([lt, st], (err) => {
-        if (err) log('✗ 订阅失败: ' + err.message);
-        else log('✓ 已订阅');
-      });
+  try{
+    const c=mqtt.connect(host,opts);
+    c.on('connect',()=>{
+      $('status').textContent='已连接';$('status').className='online';
+      log('✓ 已连接');
+      const lt='location/group/'+gid,st='status/group/'+gid;
+      c.subscribe([lt,st],err=>log(err?'✗订阅失败:'+err.message:'✓订阅成功'));
     });
-
-    client.on('message', (topic, raw) => {
-      try {
-        const d = JSON.parse(raw.toString());
-        if (!d.deviceId) return;
-        const id = d.deviceId;
-        if (!devices[id]) devices[id]={id,label:id.slice(0,8),lat:0,lng:0,ts:0,online:false};
-        if (d.lat !== undefined) {
-          devices[id].lat=d.lat; devices[id].lng=d.lng;
-          devices[id].ts=d.ts||Date.now(); devices[id].online=true;
-          log('📍 '+devices[id].label+': '+d.lat.toFixed(5)+','+d.lng.toFixed(5));
-        } else {
-          devices[id].online=d.online;
-          if(d.label) devices[id].label=d.label;
-          log('📡 '+devices[id].label+': '+(d.online?'在线':'离线'));
-        }
+    c.on('message',(topic,raw)=>{
+      try{
+        const d=JSON.parse(raw.toString());if(!d.deviceId)return;
+        const id=d.deviceId;
+        if(!devices[id])devices[id]={id,label:id.slice(0,8),lat:0,lng:0,ts:0,online:false};
+        if(d.lat!==undefined){devices[id].lat=d.lat;devices[id].lng=d.lng;devices[id].ts=d.ts||Date.now();devices[id].online=true}
+        else{devices[id].online=d.online;if(d.label)devices[id].label=d.label}
         refreshUI();
-      } catch(err){log('parse err: '+err.message)}
+      }catch(err){}
     });
-
-    client.on('error', e => { log('✗ '+e.message); $('status').textContent='错误'; $('status').className='offline'; });
-    client.on('close', () => { log('断开'); $('status').textContent='断开'; $('status').className='offline'; });
-    client.on('reconnect', () => log('重连...'));
-  } catch(e) {
-    log('异常: '+e.message); $('status').textContent='失败'; $('status').className='offline';
-  }
+    c.on('error',e=>{log('✗ '+e.message);$('status').textContent='错误';$('status').className='offline'});
+    c.on('close',()=>{log('断开');$('status').textContent='断开';$('status').className='offline'});
+  }catch(e){log('异常:'+e.message)}
 }
 
-// 断开时点状态栏重新登录
-$('status').addEventListener('click', ()=>{
-  if ($('status').className !== 'online') {
-    $('login-overlay').style.display = 'flex';
-  }
-});
+$('btnConnect').addEventListener('click',()=>connect(false));
+$('status').addEventListener('click',()=>{$('login').style.display='flex'});
 
-function refreshUI() {
-  const list = Object.values(devices).filter(d=>d.online).sort((a,b)=>b.ts-a.ts);
-  $('panel').innerHTML = list.length===0
-    ? '<div class="dev" style="color:#999">暂无在线设备</div>'
-    : list.map(d=>{
-        if(!cm[d.id]) cm[d.id]=colors[ci++%colors.length];
-        const c=cm[d.id], t=d.ts?new Date(d.ts).toLocaleTimeString('zh-CN'):'';
-        return `<div class="dev" data-id="${d.id}" style="border-left:4px solid ${c}">
-          <span><span style="color:${c}">●</span> <span class="name">${d.label||d.id.slice(0,8)}</span>
-          ${d.lat?`<br><small>${d.lat.toFixed(5)},${d.lng.toFixed(5)}</small>`:'<br><small>⏳等待GPS</small>'}</span>
-          <span class="time">${t}</span></div>`;
-      }).join('');
-
-  document.querySelectorAll('.dev').forEach(el => {
-    const id = el.dataset.id;
-    el.addEventListener('click', ()=>flyTo(id));
-    el.addEventListener('touchend', e=>{e.preventDefault();flyTo(id)});
+function refreshUI(){
+  const list=Object.values(devices).filter(d=>d.online).sort((a,b)=>b.ts-a.ts);
+  $('panel').innerHTML=list.length===0
+    ?'<div class="dev" style="color:#999">暂无在线设备 — 请打开手机App</div>'
+    :list.map(d=>{
+      if(!cm[d.id])cm[d.id]=colors[ci++%colors.length];
+      const c=cm[d.id],t=d.ts?new Date(d.ts).toLocaleTimeString('zh-CN'):'';
+      return '<div class="dev" data-id="'+d.id+'" style="border-left:4px solid '+c+'">'
+        +'<span><span style="color:'+c+'">●</span> <span class="name">'+(d.label||d.id.slice(0,8))+'</span>'
+        +(d.lat?'<br><small>'+d.lat.toFixed(5)+','+d.lng.toFixed(5)+'</small>':'<br><small>等待GPS</small>')+'</span>'
+        +'<span class="time">'+t+'</span></div>';
+    }).join('');
+  document.querySelectorAll('.dev').forEach(el=>{
+    const id=el.dataset.id;
+    el.addEventListener('click',()=>flyTo(id));
+    el.addEventListener('touchend',e=>{e.preventDefault();flyTo(id)});
   });
-
-  for (const d of Object.values(devices)) {
-    if (!d.online||!d.lat) { if(markers[d.id]){map.removeLayer(markers[d.id]);delete markers[d.id]} continue }
-    if (!cm[d.id]) cm[d.id]=colors[ci++%colors.length];
-    const icon = L.divIcon({html:`<div style="background:${cm[d.id]};width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>`,className:'',iconSize:[14,14],iconAnchor:[7,7]});
-    if (markers[d.id]) markers[d.id].setLatLng([d.lat,d.lng]);
-    else markers[d.id]=L.marker([d.lat,d.lng],{icon}).addTo(map).bindPopup(`<b>${d.label||d.id.slice(0,8)}</b><br>${d.lat.toFixed(5)},${d.lng.toFixed(5)}`);
+  for(const d of Object.values(devices)){
+    if(!d.online||!d.lat){if(markers[d.id]){map.removeLayer(markers[d.id]);delete markers[d.id]}continue}
+    if(!cm[d.id])cm[d.id]=colors[ci++%colors.length];
+    const icon=L.divIcon({html:'<div style="background:'+cm[d.id]+';width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>',className:'',iconSize:[14,14],iconAnchor:[7,7]});
+    if(markers[d.id])markers[d.id].setLatLng([d.lat,d.lng]);
+    else markers[d.id]=L.marker([d.lat,d.lng],{icon}).addTo(map).bindPopup('<b>'+(d.label||d.id.slice(0,8))+'</b><br>'+d.lat.toFixed(5)+','+d.lng.toFixed(5));
   }
 }
 
-function flyTo(id) {
-  const d=devices[id];
-  if(d&&d.lat){ map.flyTo([d.lat,d.lng],16,{duration:1}); if(markers[id])markers[id].openPopup() }
-}
+function flyTo(id){const d=devices[id];if(d&&d.lat){map.flyTo([d.lat,d.lng],16,{duration:1});if(markers[id])markers[id].openPopup()}}
+
+// 自动登录：有凭据直接连
+(function(){
+  try{
+    const s=JSON.parse(localStorage.getItem(LS));
+    if(s&&s.host){
+      $('host').value=s.host;$('username').value=s.user||'';$('password').value=s.pass||'';$('groupId').value=s.group||'1';
+      $('saveCreds').checked=true;
+      setTimeout(()=>connect(true),300);
+    }
+  }catch(_){}
+})();
 </script>
 </body>
 </html>
