@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>定位助手 - 实时监控</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Microsoft YaHei',sans-serif;height:100vh;display:flex;flex-direction:column}
+#header{background:#1976D2;color:#fff;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+h1{font-size:16px}
+#status{font-size:12px;padding:3px 10px;border-radius:10px}
+.online{background:#4CAF50}
+.offline{background:#F44336}
+#map{flex:1}
+#log{background:#1a1a2e;color:#0f0;font-size:11px;padding:8px;max-height:120px;overflow-y:auto;flex-shrink:0;font-family:monospace}
+#panel{background:#fff;border-top:2px solid #ddd;max-height:160px;overflow-y:auto;flex-shrink:0}
+.dev{padding:8px 12px;border-bottom:1px solid #eee;cursor:pointer;font-size:13px;display:flex;justify-content:space-between}
+.dev:hover{background:#f0f0f0}
+.name{font-weight:bold}
+.time{color:#999;font-size:11px}
+#login{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999}
+#login form{background:#fff;padding:24px;border-radius:8px;width:320px}
+#login input{width:100%;padding:8px;margin:6px 0;border:1px solid #ddd;border-radius:4px;font-size:14px}
+#login button{width:100%;padding:10px;background:#1976D2;color:#fff;border:none;border-radius:4px;font-size:14px;cursor:pointer;margin-top:8px}
+#login .tip{font-size:11px;color:#999;margin-top:8px}
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>📍 设备定位监控</h1>
+  <span id="status" class="offline">未连接</span>
+</div>
+<div id="map"></div>
+<div id="log"></div>
+<div id="panel"></div>
+
+<div id="login">
+  <form onsubmit="connect(event)">
+    <h3 style="margin-bottom:12px">连接 EMQX</h3>
+    <input id="host" placeholder="WebSocket 地址" value="wss://g16b99c6.ala.cn-hangzhou.emqxsl.cn:8084/mqtt">
+    <input id="username" placeholder="用户名">
+    <input id="password" type="password" placeholder="密码">
+    <input id="groupId" placeholder="群组 ID" value="1">
+    <button type="submit">连接</button>
+    <div class="tip">确保 EMQX 控制台已开启 WebSocket 监听器 (端口 8084)</div>
+  </form>
+</div>
+
+<script>
+const map = L.map('map').setView([35,105],5);
+L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
+  subdomains:'1234', maxZoom:18
+}).addTo(map);
+
+const markers={}, devices={};
+const colors=['#E53935','#43A047','#FB8C00','#8E24AA','#00ACC1'];
+let ci=0, cm={};
+
+function log(msg) {
+  const el = document.getElementById('log');
+  el.innerHTML += `[${new Date().toLocaleTimeString()}] ${msg}<br>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function connect(e) {
+  e.preventDefault();
+  const host = document.getElementById('host').value;
+  const user = document.getElementById('username').value;
+  const pass = document.getElementById('password').value;
+  const gid = document.getElementById('groupId').value||'1';
+
+  log('正在连接 ' + host);
+
+  const opts = { clientId:'web-'+Date.now().toString(36), clean:true, keepalive:60, reconnectPeriod:5000 };
+  if (user) { opts.username = user; opts.password = pass; }
+
+  // Try to connect
+  const client = mqtt.connect(host, opts);
+
+  client.on('connect', () => {
+    log('✓ WebSocket 已连接');
+    document.getElementById('status').textContent = '已连接';
+    document.getElementById('status').className = 'online';
+    document.getElementById('login').style.display = 'none';
+
+    const lt = 'location/group/' + gid;
+    const st = 'status/group/' + gid;
+    client.subscribe([lt, st], (err) => {
+      if (err) log('订阅失败: ' + err.message);
+      else log('✓ 已订阅: ' + lt + ', ' + st);
+    });
+  });
+
+  client.on('message', (topic, raw) => {
+    try {
+      const d = JSON.parse(raw.toString());
+      if (!d.deviceId) return;
+      const id = d.deviceId;
+      if (!devices[id]) devices[id]={id,label:id.slice(0,8),lat:0,lng:0,ts:0,online:false};
+      if (d.lat !== undefined) {
+        devices[id].lat = d.lat; devices[id].lng = d.lng; devices[id].ts = d.ts||Date.now(); devices[id].online = true;
+        log(`📍 ${devices[id].label}: ${d.lat.toFixed(5)},${d.lng.toFixed(5)}`);
+      } else {
+        Object.assign(devices[id], { online:d.online, label:d.label||devices[id].label, visible:d.visible!==false });
+        log(`📡 ${devices[id].label}: ${d.online?'在线':'离线'}`);
+      }
+      refreshUI();
+    } catch(err) { log('解析错误: '+err.message); }
+  });
+
+  client.on('error', (err) => { log('❌ 错误: ' + err.message); });
+  client.on('close', () => {
+    log('断开连接');
+    document.getElementById('status').textContent = '断开';
+    document.getElementById('status').className = 'offline';
+  });
+  client.on('reconnect', () => log('重连中...'));
+  client.on('offline', () => log('离线'));
+}
+
+function refreshUI() {
+  const list = Object.values(devices).filter(d=>d.online).sort((a,b)=>b.ts-a.ts);
+  document.getElementById('panel').innerHTML = list.length===0
+    ? '<div class="dev">暂无在线设备 — 请打开手机 App</div>'
+    : list.map(d=>{
+        if(!cm[d.id]) cm[d.id]=colors[ci++%colors.length];
+        const c=cm[d.id], t=d.ts?new Date(d.ts).toLocaleTimeString('zh-CN'):'';
+        return `<div class="dev" onclick="flyTo('${d.id}')" style="border-left:4px solid ${c}">
+          <span><span style="color:${c}">●</span> <span class="name">${d.label||d.id.slice(0,8)}</span>
+          <br><small>${d.lat?d.lat.toFixed(5)+','+d.lng.toFixed(5):'等待GPS'}</small></span>
+          <span class="time">${t}</span></div>`;
+      }).join('');
+
+  for (const d of Object.values(devices)) {
+    if (!d.online||!d.lat) { if(markers[d.id]){map.removeLayer(markers[d.id]);delete markers[d.id]} continue }
+    if (!cm[d.id]) cm[d.id]=colors[ci++%colors.length];
+    const icon = L.divIcon({html:`<div style="background:${cm[d.id]};width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>`,className:'',iconSize:[14,14],iconAnchor:[7,7]});
+    if (markers[d.id]) markers[d.id].setLatLng([d.lat,d.lng]);
+    else markers[d.id]=L.marker([d.lat,d.lng],{icon}).addTo(map).bindPopup(`<b>${d.label||d.id.slice(0,8)}</b><br>${d.lat.toFixed(5)},${d.lng.toFixed(5)}`);
+  }
+}
+
+function flyTo(id) {
+  const d=devices[id];
+  if(d&&d.lat){ map.flyTo([d.lat,d.lng],16,{duration:1}); if(markers[id])markers[id].openPopup() }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FFFFFFFF">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:gravity="center"
+        android:text="定位助手"
+        android:textSize="16sp"
+        android:textColor="#FFFFFF"
+        android:background="#1976D2" />
+
+    <!-- 状态栏 -->
+    <TextView
+        android:id="@+id/statusBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="6dp"
+        android:background="#FFE8E8E8"
+        android:text="启动中..."
+        android:textSize="13sp"
+        android:gravity="center" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="4dp">
+
+        <Button android:id="@+id/btnMap" android:text="🗺 地图" android:layout_width="0dp" android:layout_weight="1" android:layout_height="36dp" android:textSize="11sp" />
+        <Button android:id="@+id/btnSettings" android:text="⚙ 设置" android:layout_width="0dp" android:layout_weight="1" android:layout_height="36dp" android:textSize="11sp" />
+        <Button android:id="@+id/btnCall" android:text="📞 呼叫" android:layout_width="0dp" android:layout_weight="1" android:layout_height="36dp" android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- 内容区 -->
+    <FrameLayout
+        android:id="@+id/contentArea"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#FFF5F5F5">
+
+        <ScrollView
+            android:id="@+id/logScroll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:padding="6dp">
+
+            <TextView
+                android:id="@+id/logText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:textColor="#FF333333" />
+        </ScrollView>
+    </FrameLayout>
+
+    <!-- 底部设备列表（地图模式时显示） -->
+    <ScrollView
+        android:id="@+id/devicePanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxHeight="140dp"
+        android:background="#EEFFFFFF"
+        android:visibility="gone"
+        android:elevation="4dp">
+
+        <LinearLayout
+            android:id="@+id/deviceList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="4dp" />
+    </ScrollView>
+</LinearLayout>
