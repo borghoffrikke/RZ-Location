@@ -124,7 +124,7 @@ function connect(auto){
           // WGS84→GCJ02 转换（高德地图需要火星坐标）
           const gcj=wgs2gcj(d.lng,d.lat);
           devices[id].lat=gcj[1];devices[id].lng=gcj[0];devices[id].ts=d.ts||Date.now();devices[id].online=true;
-        else{devices[id].online=d.online;if(d.label)devices[id].label=d.label}
+        }else{devices[id].online=d.online;if(d.label)devices[id].label=d.label}
         refreshUI();
       }catch(err){}
     });
