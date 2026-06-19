@@ -78,6 +78,18 @@ function log(msg){
   el.scrollTop=el.scrollHeight;
 }
 
+// WGS84 → GCJ02 坐标转换（纠偏 ~300m）
+function wgs2gcj(lng,lat){
+  if(lng<72.004||lng>137.8347||lat<0.8293||lat>55.8271)return[lng,lat];
+  const a=6378245,ee=0.00669342162296594323;
+  function tlat(x,y){let r=-100+2*x+3*y+0.2*y*y+0.1*x*y+0.2*Math.sqrt(Math.abs(x));r+=(20*Math.sin(6*x*Math.PI)+20*Math.sin(2*x*Math.PI))*2/3;r+=(20*Math.sin(y*Math.PI)+40*Math.sin(y/3*Math.PI))*2/3;r+=(160*Math.sin(y/12*Math.PI)+320*Math.sin(y*Math.PI/30))*2/3;return r}
+  function tlng(x,y){let r=300+x+2*y+0.1*x*x+0.1*x*y+0.1*Math.sqrt(Math.abs(x));r+=(20*Math.sin(6*x*Math.PI)+20*Math.sin(2*x*Math.PI))*2/3;r+=(20*Math.sin(x*Math.PI)+40*Math.sin(x/3*Math.PI))*2/3;r+=(150*Math.sin(x/12*Math.PI)+300*Math.sin(x/30*Math.PI))*2/3;return r}
+  let dlat=tlat(lng-105,lat-35),dlng=tlng(lng-105,lat-35);
+  let rad=lat/180*Math.PI,magic=Math.sin(rad);magic=1-ee*magic*magic;
+  let sqrt=Math.sqrt(magic);dlat=dlat*180/((a*(1-ee))/(magic*sqrt)*Math.PI);dlng=dlng*180/(a/sqrt*Math.cos(rad)*Math.PI);
+  return[lng+dlng,lat+dlat];
+}
+
 function connect(auto){
   const host=$('host').value.trim();
   const user=$('username').value.trim();
@@ -108,7 +120,10 @@ function connect(auto){
         const d=JSON.parse(raw.toString());if(!d.deviceId)return;
         const id=d.deviceId;
         if(!devices[id])devices[id]={id,label:id.slice(0,8),lat:0,lng:0,ts:0,online:false};
-        if(d.lat!==undefined){devices[id].lat=d.lat;devices[id].lng=d.lng;devices[id].ts=d.ts||Date.now();devices[id].online=true}
+        if(d.lat!==undefined){
+          // WGS84→GCJ02 转换（高德地图需要火星坐标）
+          const gcj=wgs2gcj(d.lng,d.lat);
+          devices[id].lat=gcj[1];devices[id].lng=gcj[0];devices[id].ts=d.ts||Date.now();devices[id].online=true;
         else{devices[id].online=d.online;if(d.label)devices[id].label=d.label}
         refreshUI();
       }catch(err){}
